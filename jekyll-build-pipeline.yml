@@ -1,0 +1,278 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  #WebsiteURL
+  WebsiteURL:
+    Description: Website URL
+    Type: String
+    Default: www.example.com
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
+  #IAM Group
+  CodeCommitGroup:
+    Description: Name of the CodeCommit group
+    Type: String
+    Default: codecommit-group-rw
+    #Default: !Join ['', [!Ref 'AWS::StackName', '-group-rw']]
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
+  #CodeCommit
+  RepositoryName:
+    Description: Name of the CodeCommit repo
+    Type: String
+    Default: codecommit-demo
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
+  #CodeBuild
+  RepositoryBranch:
+    Description: Name of the CodeCommit branch to build from
+    Type: String
+    Default: master
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
+  #S3
+  S3BucketPrefix:
+    Type: String
+    Default: jekyll-website
+    Description: Name of the S3 bucket prefix where deployments will be pushed
+  S3StagingAccessControl:
+    Type: String
+    Default: Private
+    AllowedValues:
+      - PublicRead
+      - Private
+
+Resources:
+  CodeCommitIAMGroup:
+    Type: AWS::IAM::Group
+    Properties: 
+      GroupName: !Ref CodeCommitGroup
+      Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
+      ManagedPolicyArns: 
+        - !Ref CodeCommitIAMManagedPolicy
+      #Path: String
+      #Policies: 
+      #  - !Ref CodeCommitIAMPolicy
+
+  CodeCommitIAMManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Join ['', [!Ref 'AWS::StackName', '-policy']]
+      Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'codecommit:GitPull'
+              - 'codecommit:GitPush'
+            Resource: !GetAtt [CodeCommitRepo, Arn]
+      #Groups:
+      #  - !Ref CodeCommitIAMGroup
+
+  # Create the CodeCommit Repo
+  CodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties: 
+      #RepositoryDescription: String
+      RepositoryName: 
+        Ref: RepositoryName
+      #Tags: 
+      #  - Tag
+      #Triggers: 
+      #  - RepositoryTrigger
+
+  # Create S3 buckets
+  S3ProdBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      #AccelerateConfiguration: 
+      #  AccelerateConfiguration
+      #AccessControl: String
+      #AnalyticsConfigurations: 
+      #  - AnalyticsConfiguration
+      #BucketEncryption: 
+      #  BucketEncryption
+      BucketName:
+        !Join ['', [!Ref 'S3BucketPrefix', '-prod']]
+        #Fn::Join:
+        #- ''
+        #- - !Ref S3BucketPrefix
+        #  - '-prod'
+      #CorsConfiguration: 
+      #  CorsConfiguration
+      #InventoryConfigurations: 
+      #  - InventoryConfiguration
+      #LifecycleConfiguration: 
+      #  LifecycleConfiguration
+      #LoggingConfiguration: 
+      #  LoggingConfiguration
+      #MetricsConfigurations: 
+      #  - MetricsConfiguration
+      #NotificationConfiguration: 
+      #  NotificationConfiguration
+      #ObjectLockConfiguration: 
+      #  ObjectLockConfiguration
+      #ObjectLockEnabled: Boolean
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      #ReplicationConfiguration: 
+      #  ReplicationConfiguration
+      #Tags: 
+      #  - Tag
+      #VersioningConfiguration: 
+      #  VersioningConfiguration
+      WebsiteConfiguration: 
+        ErrorDocument: 404.html
+        IndexDocument: index.html
+  ProdBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref 'S3ProdBucket'
+      PolicyDocument:
+        Statement:
+          - Action: ['s3:GetObject']
+            Effect: Allow
+            Principal:
+              AWS: !Join ['', ['arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ', !Ref 'CloudfrontOAI']]
+            Resource:
+              !Join ['', ['arn:aws:s3:::', !Ref 'S3ProdBucket', /*]]
+
+  S3StagingBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: 
+        !Join ['', [!Ref 'S3BucketPrefix', '-staging']]
+      AccessControl: !Ref 'S3StagingAccessControl'
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      WebsiteConfiguration: 
+        ErrorDocument: 404.html
+        IndexDocument: index.html
+  StagingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref 'S3StagingBucket'
+      PolicyDocument:
+        Statement:
+          - Action: ['s3:GetObject']
+            Effect: Allow
+            Principal: '*'
+            Resource:
+              !Join ['', ['arn:aws:s3:::', !Ref 'S3StagingBucket', /*]]
+
+  #Create Cloudfront Distro
+  CloudfrontOAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties: 
+      CloudFrontOriginAccessIdentityConfig: 
+        Comment: !Join ['', ['access-identity-', !GetAtt [S3ProdBucket, DomainName]]]
+
+  CloudfrontDistro:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+          #Aliases: 
+          #  - !Ref WebsiteURL
+          #CacheBehaviors: 
+          #  - CacheBehavior
+          #Comment: String
+          CustomErrorResponses: 
+            - ErrorCachingMinTTL: 300
+              ErrorCode: 404
+              ResponseCode: 404
+              ResponsePagePath: /404.html
+          DefaultCacheBehavior: 
+              AllowedMethods: 
+                - GET
+                - HEAD
+              CachedMethods: 
+                - GET
+                - HEAD
+              Compress: True
+              #DefaultTTL: Double
+              #FieldLevelEncryptionId: String
+              ForwardedValues: 
+                QueryString: False
+                Cookies:
+                  Forward: none
+              #LambdaFunctionAssociations: 
+              #  - LambdaFunctionAssociation
+              #MaxTTL: Double
+              #MinTTL: Double
+              SmoothStreaming: False
+              TargetOriginId: !Join ['', ['S3-', !Ref S3ProdBucket]]
+              #TrustedSigners: 
+              #  - String
+              ViewerProtocolPolicy: allow-all
+          DefaultRootObject: index.html
+          Enabled: False
+          HttpVersion: http2
+          IPV6Enabled: True
+          #Logging: 
+          #  Logging
+          Origins: 
+              #CustomOriginConfig: 
+              #  CustomOriginConfig
+            - DomainName: !GetAtt [S3ProdBucket, DomainName]
+              Id: !Join ['', ['S3-', !Ref S3ProdBucket]]
+              #OriginCustomHeaders: 
+              #  - OriginCustomHeader
+              #OriginPath: String
+              S3OriginConfig: 
+                OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudfrontOAI]]
+          #PriceClass: String
+          #Restrictions: 
+          #  Restrictions
+          #ViewerCertificate: 
+          #  ViewerCertificate
+          #WebACLId: String
+
+  ### Here ###
+  #Lambda@EDGE simple URL function
+  LambdaEdgeFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: 'A custom Lambda@Edge function for simple URLs from CloudFront Distribution'
+      FunctionName: 'lambda-cloudfront-simple-urls'
+      Handler: index.handler
+      Code:
+        ZipFile: !Sub |
+          'use strict';
+            exports.handler = (event, context, callback) => {
+                
+                // Extract the request from the CloudFront event that is sent to Lambda@Edge 
+                var request = event.Records[0].cf.request;
+
+                // Extract the URI from the request
+                var olduri = request.uri;
+
+                // Match any '/' that occurs at the end of a URI. Replace it with a default index
+                var newuri = olduri.replace(/\/$/, '\/index.html');
+                
+                // Log the URI as received by CloudFront and the new URI to be used to fetch from origin
+                console.log('Old URI: ' + olduri);
+                console.log('New URI: ' + newuri);
+                
+                // Replace the received URI with the URI that includes the index page
+                request.uri = newuri;
+                
+                // Return to CloudFront
+                return callback(null, request);
+
+            };
+      Runtime: nodejs10.x
+
+Outputs:
+  #CodeCommitUser:
+  #  Value: !Ref CodeCommitUser
+  CodeCommitURL:
+    Value: !GetAtt [CodeCommitRepo, CloneUrlHttp]
+  StagingURL:
+    Value: !GetAtt [S3StagingBucket, WebsiteURL]
