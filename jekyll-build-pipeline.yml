@@ -1,26 +1,34 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Parameters:
+  #DomainName
+  DomainName:
+    Description: Domain Name
+    Type: String
+    Default: jekyll-demo.com
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
   #WebsiteURL
   WebsiteURL:
     Description: Website URL
     Type: String
-    Default: www.example.com
+    Default: www.jekyll-demo.com
     AllowedPattern: "[\\x20-\\x7E]*"
     ConstraintDescription: Can contain only ASCII characters.
   #IAM Group
   CodeCommitGroup:
     Description: Name of the CodeCommit group
     Type: String
-    Default: codecommit-group-rw
-    #Default: !Join ['', [!Ref 'AWS::StackName', '-group-rw']]
+    Default: jekyll-demo-codecommit-repo-rw
+    #Default: codecommit-group-rw
+    #Default: !Join ['', [!Ref AWS::StackName, '-group-rw']]
     AllowedPattern: "[\\x20-\\x7E]*"
     ConstraintDescription: Can contain only ASCII characters.
   #CodeCommit
   RepositoryName:
     Description: Name of the CodeCommit repo
     Type: String
-    Default: codecommit-demo
+    Default: jekyll-demo-repo
     AllowedPattern: "[\\x20-\\x7E]*"
     ConstraintDescription: Can contain only ASCII characters.
   #CodeBuild
@@ -33,7 +41,7 @@ Parameters:
   #S3
   S3BucketPrefix:
     Type: String
-    Default: jekyll-website
+    Default: jekyll-demo-website
     Description: Name of the S3 bucket prefix where deployments will be pushed
   S3StagingAccessControl:
     Type: String
@@ -43,16 +51,39 @@ Parameters:
       - Private
 
 Resources:
+  Route53HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties: 
+      #HostedZoneConfig: 
+      #  HostedZoneConfig
+      #HostedZoneTags: 
+      #  - HostedZoneTag
+      Name: !Ref DomainName
+      #QueryLoggingConfig: 
+      #  QueryLoggingConfig
+  Route53RecordSet:
+    DependsOn: CloudFrontDistro
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Comment: String
+      HostedZoneId: !Ref 'Route53HostedZone'
+      #RecordSet: 
+      #  - AliasTarget: 
+      #    !GetAtt [CloudFrontDistro, DomainName]
+      HostedZoneId: !Ref 'Route53HostedZone'
+      Name: !Ref WebsiteURL
+      Type: A
+
   CodeCommitIAMGroup:
     Type: AWS::IAM::Group
     Properties: 
-      GroupName: !Ref CodeCommitGroup
+      GroupName: !Ref 'CodeCommitGroup'
       Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
       ManagedPolicyArns: 
         - !Ref CodeCommitIAMManagedPolicy
       #Path: String
       #Policies: 
-      #  - !Ref CodeCommitIAMPolicy
+      #  - !Ref 'CodeCommitIAMPolicy'
 
   CodeCommitIAMManagedPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -68,7 +99,7 @@ Resources:
               - 'codecommit:GitPush'
             Resource: !GetAtt [CodeCommitRepo, Arn]
       #Groups:
-      #  - !Ref CodeCommitIAMGroup
+      #  - !Ref 'CodeCommitIAMGroup'
 
   # Create the CodeCommit Repo
   CodeCommitRepo:
@@ -97,7 +128,7 @@ Resources:
         !Join ['', [!Ref 'S3BucketPrefix', '-prod']]
         #Fn::Join:
         #- ''
-        #- - !Ref S3BucketPrefix
+        #- - !Ref 'S3BucketPrefix'
         #  - '-prod'
       #CorsConfiguration: 
       #  CorsConfiguration
@@ -129,6 +160,7 @@ Resources:
         ErrorDocument: 404.html
         IndexDocument: index.html
   ProdBucketPolicy:
+    DependsOn: CloudFrontDistro
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref 'S3ProdBucket'
@@ -155,17 +187,18 @@ Resources:
       WebsiteConfiguration: 
         ErrorDocument: 404.html
         IndexDocument: index.html
-  StagingBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref 'S3StagingBucket'
-      PolicyDocument:
-        Statement:
-          - Action: ['s3:GetObject']
-            Effect: Allow
-            Principal: '*'
-            Resource:
-              !Join ['', ['arn:aws:s3:::', !Ref 'S3StagingBucket', /*]]
+  #ToDo - Issues with the bucket policy
+  #StagingBucketPolicy:
+  #  Type: AWS::S3::BucketPolicy
+  #  Properties:
+  #    Bucket: !Ref 'S3StagingBucket'
+  #    PolicyDocument:
+  #      Statement:
+  #        - Action: ['s3:GetObject']
+  #          Effect: Allow
+  #          Principal: '*'
+  #          Resource:
+  #            !Join ['', ['arn:aws:s3:::', !Ref 'S3StagingBucket', /*]]
 
   #Create Cloudfront Distro
   CloudfrontOAI:
@@ -174,12 +207,13 @@ Resources:
       CloudFrontOriginAccessIdentityConfig: 
         Comment: !Join ['', ['access-identity-', !GetAtt [S3ProdBucket, DomainName]]]
 
-  CloudfrontDistro:
+  CloudFrontDistro:
+    DependsOn: S3ProdBucket
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
           #Aliases: 
-          #  - !Ref WebsiteURL
+          #  - !Ref 'WebsiteURL'
           #CacheBehaviors: 
           #  - CacheBehavior
           #Comment: String
@@ -207,7 +241,7 @@ Resources:
               #MaxTTL: Double
               #MinTTL: Double
               SmoothStreaming: False
-              TargetOriginId: !Join ['', ['S3-', !Ref S3ProdBucket]]
+              TargetOriginId: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
               #TrustedSigners: 
               #  - String
               ViewerProtocolPolicy: allow-all
@@ -221,12 +255,12 @@ Resources:
               #CustomOriginConfig: 
               #  CustomOriginConfig
             - DomainName: !GetAtt [S3ProdBucket, DomainName]
-              Id: !Join ['', ['S3-', !Ref S3ProdBucket]]
+              Id: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
               #OriginCustomHeaders: 
               #  - OriginCustomHeader
               #OriginPath: String
               S3OriginConfig: 
-                OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudfrontOAI]]
+                OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref 'CloudfrontOAI']]
           #PriceClass: String
           #Restrictions: 
           #  Restrictions
@@ -234,7 +268,7 @@ Resources:
           #  ViewerCertificate
           #WebACLId: String
 
-  ### Here ###
+  #ToDo - Need to finish the Lambda function
   #Lambda@EDGE simple URL function
   LambdaEdgeFunction:
     Type: 'AWS::Lambda::Function'
@@ -271,8 +305,17 @@ Resources:
 
 Outputs:
   #CodeCommitUser:
-  #  Value: !Ref CodeCommitUser
+  #  Value: !Ref 'CodeCommitUser'
   CodeCommitURL:
     Value: !GetAtt [CodeCommitRepo, CloneUrlHttp]
   StagingURL:
     Value: !GetAtt [S3StagingBucket, WebsiteURL]
+  DomainNameID:
+    Value: Ref! 'Route53HostedZone'
+  #DomainNameNS:
+  #  Value: !GetAtt [DomainName, NameServers]
+
+
+  #CloudFront
+  #ref cloudfront ID
+  #GetAtt DomainName cloudfront url
