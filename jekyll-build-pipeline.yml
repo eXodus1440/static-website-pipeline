@@ -51,29 +51,30 @@ Parameters:
       - Private
 
 Resources:
+  #Route53
   Route53HostedZone:
     Type: AWS::Route53::HostedZone
     Properties: 
-      #HostedZoneConfig: 
-      #  HostedZoneConfig
-      #HostedZoneTags: 
-      #  - HostedZoneTag
       Name: !Ref DomainName
-      #QueryLoggingConfig: 
-      #  QueryLoggingConfig
-  Route53RecordSet:
+  Route53Record:
     DependsOn: CloudFrontDistro
-    Type: AWS::Route53::RecordSet
-    Properties: 
-      Comment: String
-      HostedZoneId: !Ref 'Route53HostedZone'
-      #RecordSet: 
-      #  - AliasTarget: 
-      #    !GetAtt [CloudFrontDistro, DomainName]
-      HostedZoneId: !Ref 'Route53HostedZone'
-      Name: !Ref WebsiteURL
-      Type: A
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref Route53HostedZone
+      RecordSets:
+      - Name: !Ref DomainName
+        Type: A
+        AliasTarget: 
+          HostedZoneId: Z2FDTNDATAQYW2
+          DNSName: !GetAtt [CloudFrontDistro, DomainName]
+      - Name: !Ref WebsiteURL
+        Type: CNAME
+        TTL: 900
+        ResourceRecords: 
+        - !GetAtt [CloudFrontDistro, DomainName]
 
+
+  #IAM Group & Permissions
   CodeCommitIAMGroup:
     Type: AWS::IAM::Group
     Properties: 
@@ -84,7 +85,6 @@ Resources:
       #Path: String
       #Policies: 
       #  - !Ref 'CodeCommitIAMPolicy'
-
   CodeCommitIAMManagedPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -98,10 +98,9 @@ Resources:
               - 'codecommit:GitPull'
               - 'codecommit:GitPush'
             Resource: !GetAtt [CodeCommitRepo, Arn]
-      #Groups:
-      #  - !Ref 'CodeCommitIAMGroup'
 
-  # Create the CodeCommit Repo
+
+  #CodeCommit Repo
   CodeCommitRepo:
     Type: AWS::CodeCommit::Repository
     Properties: 
@@ -113,7 +112,8 @@ Resources:
       #Triggers: 
       #  - RepositoryTrigger
 
-  # Create S3 buckets
+
+  #S3 buckets
   S3ProdBucket:
     Type: AWS::S3::Bucket
     Properties: 
@@ -173,6 +173,7 @@ Resources:
             Resource:
               !Join ['', ['arn:aws:s3:::', !Ref 'S3ProdBucket', /*]]
 
+
   S3StagingBucket:
     Type: AWS::S3::Bucket
     Properties: 
@@ -208,7 +209,9 @@ Resources:
         Comment: !Join ['', ['access-identity-', !GetAtt [S3ProdBucket, DomainName]]]
 
   CloudFrontDistro:
-    DependsOn: S3ProdBucket
+    DependsOn: 
+      - S3ProdBucket
+      - LambdaEdgeFunction
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
@@ -236,8 +239,10 @@ Resources:
                 QueryString: False
                 Cookies:
                   Forward: none
+              #ToDo associated the lambda@edge to the distro
               #LambdaFunctionAssociations: 
-              #  - LambdaFunctionAssociation
+              #  EventType: origin-request
+              #  LambdaFunctionARN: !GetAtt [LambdaEdgeFunction, Arn]
               #MaxTTL: Double
               #MinTTL: Double
               SmoothStreaming: False
@@ -246,7 +251,7 @@ Resources:
               #  - String
               ViewerProtocolPolicy: allow-all
           DefaultRootObject: index.html
-          Enabled: False
+          Enabled: True
           HttpVersion: http2
           IPV6Enabled: True
           #Logging: 
@@ -267,55 +272,114 @@ Resources:
           #ViewerCertificate: 
           #  ViewerCertificate
           #WebACLId: String
+  #!ref CloudFrontDistro #(cloudfront ID)
+  #!GetAtt [CloudFrontDistro, DomainName] #(cloudfront url)
 
-  #ToDo - Need to finish the Lambda function
-  #Lambda@EDGE simple URL function
+  LambdaEdgePolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Resource:
+          - arn:aws:logs:*:*:*
+      PolicyName: lambda-cloudfront-simple-urls-policy
+      Roles: 
+        - !Ref LambdaEdgeRole
+  #!Ref LambdaEdgePolicy #(policy name)
+      
+  LambdaEdgeRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+            - edgelambda.amazonaws.com
+          Action: sts:AssumeRole
+      Description: A role to support the custom Lambda@Edge function for simple URLs from CloudFront Distribution
+      #ManagedPolicyArns: 
+      #  - String
+      #MaxSessionDuration: Integer
+      #Path: String
+      #PermissionsBoundary: String
+      #Policies: 
+      #  - Policy
+      RoleName: lambda-cloudfront-simple-urls-role
+      #Tags: 
+      #  - Tag
+  #!Ref LambdaEdgeRole #(role name)
+  #!GetAtt [LambdaEdgeRole , Arn]
+  #!GetAtt [LambdaEdgeRole , RoleId]
+
   LambdaEdgeFunction:
-    Type: 'AWS::Lambda::Function'
-    Properties:
-      Description: 'A custom Lambda@Edge function for simple URLs from CloudFront Distribution'
-      FunctionName: 'lambda-cloudfront-simple-urls'
+    Type: AWS::Lambda::Function
+    Properties: 
+      #DeadLetterConfig: 
+      #  DeadLetterConfig
+      Description: A custom Lambda@Edge function for simple URLs from CloudFront Distribution
+      #Environment: 
+      #  Environment
+      FunctionName: lambda-cloudfront-simple-urls
       Handler: index.handler
-      Code:
+      #KmsKeyArn: String
+      #Layers: 
+      #  - String
+      #MemorySize: Integer
+      #ReservedConcurrentExecutions: Integer
+      Role: !GetAtt [LambdaEdgeRole , Arn]
+      Runtime: nodejs10.x
+      #Tags: 
+      #  - Tag
+      #Timeout: Integer
+      #TracingConfig: 
+      #  TracingConfig
+      #VpcConfig: 
+      #  VpcConfig
+      Code: 
         ZipFile: !Sub |
-          'use strict';
-            exports.handler = (event, context, callback) => {
-                
-                // Extract the request from the CloudFront event that is sent to Lambda@Edge 
-                var request = event.Records[0].cf.request;
+            'use strict';
+              exports.handler = (event, context, callback) => {
+                  
+                  // Extract the request from the CloudFront event that is sent to Lambda@Edge 
+                  var request = event.Records[0].cf.request;
 
-                // Extract the URI from the request
-                var olduri = request.uri;
+                  // Extract the URI from the request
+                  var olduri = request.uri;
 
-                // Match any '/' that occurs at the end of a URI. Replace it with a default index
-                var newuri = olduri.replace(/\/$/, '\/index.html');
-                
-                // Log the URI as received by CloudFront and the new URI to be used to fetch from origin
-                console.log('Old URI: ' + olduri);
-                console.log('New URI: ' + newuri);
-                
-                // Replace the received URI with the URI that includes the index page
-                request.uri = newuri;
-                
-                // Return to CloudFront
-                return callback(null, request);
+                  // Match any '/' that occurs at the end of a URI. Replace it with a default index
+                  var newuri = olduri.replace(/\/$/, '\/index.html');
+                  
+                  // Log the URI as received by CloudFront and the new URI to be used to fetch from origin
+                  console.log('Old URI: ' + olduri);
+                  console.log('New URI: ' + newuri);
+                  
+                  // Replace the received URI with the URI that includes the index page
+                  request.uri = newuri;
+                  
+                  // Return to CloudFront
+                  return callback(null, request);
 
             };
-      Runtime: nodejs10.x
+  #!Ref LambdaEdgeFunction #(function name)
+  #!GetAtt [LambdaEdgeFunction, Arn]
 
 Outputs:
-  #CodeCommitUser:
-  #  Value: !Ref 'CodeCommitUser'
   CodeCommitURL:
     Value: !GetAtt [CodeCommitRepo, CloneUrlHttp]
   StagingURL:
     Value: !GetAtt [S3StagingBucket, WebsiteURL]
-  DomainNameID:
-    Value: Ref! 'Route53HostedZone'
+  HostedZoneID:
+    Value: !Ref 'Route53HostedZone'
   #DomainNameNS:
   #  Value: !GetAtt [DomainName, NameServers]
-
-
-  #CloudFront
-  #ref cloudfront ID
-  #GetAtt DomainName cloudfront url
+  CFDistroURL:
+    Value: !GetAtt [CloudFrontDistro, DomainName]
