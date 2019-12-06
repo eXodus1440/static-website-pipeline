@@ -211,7 +211,7 @@ Resources:
   CloudFrontDistro:
     DependsOn: 
       - S3ProdBucket
-      - LambdaEdgeFunction
+      #- LambdaEdgeFunction
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
@@ -240,9 +240,9 @@ Resources:
                 Cookies:
                   Forward: none
               #ToDo associated the lambda@edge to the distro
-              #LambdaFunctionAssociations: 
-              #  EventType: origin-request
-              #  LambdaFunctionARN: !GetAtt [LambdaEdgeFunction, Arn]
+              #LambdaFunctionAssociations:
+              #  - EventType: origin-request
+              #    LambdaFunctionARN: !Ref LambdaEdgeFunctionVersion
               #MaxTTL: Double
               #MinTTL: Double
               SmoothStreaming: False
@@ -275,103 +275,6 @@ Resources:
   #!ref CloudFrontDistro #(cloudfront ID)
   #!GetAtt [CloudFrontDistro, DomainName] #(cloudfront url)
 
-  LambdaEdgePolicy:
-    Type: AWS::IAM::Policy
-    Properties: 
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Action:
-          - logs:CreateLogGroup
-          - logs:CreateLogStream
-          - logs:PutLogEvents
-          Resource:
-          - arn:aws:logs:*:*:*
-      PolicyName: lambda-cloudfront-simple-urls-policy
-      Roles: 
-        - !Ref LambdaEdgeRole
-  #!Ref LambdaEdgePolicy #(policy name)
-      
-  LambdaEdgeRole:
-    Type: AWS::IAM::Role
-    Properties: 
-      AssumeRolePolicyDocument: 
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - lambda.amazonaws.com
-            - edgelambda.amazonaws.com
-          Action: sts:AssumeRole
-      Description: A role to support the custom Lambda@Edge function for simple URLs from CloudFront Distribution
-      #ManagedPolicyArns: 
-      #  - String
-      #MaxSessionDuration: Integer
-      #Path: String
-      #PermissionsBoundary: String
-      #Policies: 
-      #  - Policy
-      RoleName: lambda-cloudfront-simple-urls-role
-      #Tags: 
-      #  - Tag
-  #!Ref LambdaEdgeRole #(role name)
-  #!GetAtt [LambdaEdgeRole , Arn]
-  #!GetAtt [LambdaEdgeRole , RoleId]
-
-  LambdaEdgeFunction:
-    Type: AWS::Lambda::Function
-    Properties: 
-      #DeadLetterConfig: 
-      #  DeadLetterConfig
-      Description: A custom Lambda@Edge function for simple URLs from CloudFront Distribution
-      #Environment: 
-      #  Environment
-      FunctionName: lambda-cloudfront-simple-urls
-      Handler: index.handler
-      #KmsKeyArn: String
-      #Layers: 
-      #  - String
-      #MemorySize: Integer
-      #ReservedConcurrentExecutions: Integer
-      Role: !GetAtt [LambdaEdgeRole , Arn]
-      Runtime: nodejs10.x
-      #Tags: 
-      #  - Tag
-      #Timeout: Integer
-      #TracingConfig: 
-      #  TracingConfig
-      #VpcConfig: 
-      #  VpcConfig
-      Code: 
-        ZipFile: !Sub |
-            'use strict';
-              exports.handler = (event, context, callback) => {
-                  
-                  // Extract the request from the CloudFront event that is sent to Lambda@Edge 
-                  var request = event.Records[0].cf.request;
-
-                  // Extract the URI from the request
-                  var olduri = request.uri;
-
-                  // Match any '/' that occurs at the end of a URI. Replace it with a default index
-                  var newuri = olduri.replace(/\/$/, '\/index.html');
-                  
-                  // Log the URI as received by CloudFront and the new URI to be used to fetch from origin
-                  console.log('Old URI: ' + olduri);
-                  console.log('New URI: ' + newuri);
-                  
-                  // Replace the received URI with the URI that includes the index page
-                  request.uri = newuri;
-                  
-                  // Return to CloudFront
-                  return callback(null, request);
-
-            };
-  #!Ref LambdaEdgeFunction #(function name)
-  #!GetAtt [LambdaEdgeFunction, Arn]
-
 Outputs:
   CodeCommitURL:
     Value: !GetAtt [CodeCommitRepo, CloneUrlHttp]
@@ -383,3 +286,5 @@ Outputs:
   #  Value: !GetAtt [DomainName, NameServers]
   CFDistroURL:
     Value: !GetAtt [CloudFrontDistro, DomainName]
+  LambdaARN:
+    Value: !GetAtt [LambdaEdgeFunction, Arn]
