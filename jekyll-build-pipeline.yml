@@ -23,27 +23,25 @@ Parameters:
     ConstraintDescription: Can contain only ASCII characters.
   #IAM Group
   CodeCommitGroup:
-    Description: Name of the CodeCommit group
+    Description: Name of the CodeCommit group - will be prefixed with the Stack Name.
     Type: String
-    Default: jekyll-demo-codecommit-repo-rw
-    #Default: codecommit-group-rw
-    #Default: !Join ['', [!Ref AWS::StackName, '-group-rw']]
+    Default: codecommit-repo-rw
     AllowedPattern: "[\\x20-\\x7E]*"
     ConstraintDescription: Can contain only ASCII characters.
   #CodeCommit
   RepositoryName:
-    Description: Name of the CodeCommit repo
+    Description: Name of the CodeCommit repo - will be prefixed with the Stack Name.
     Type: String
-    Default: jekyll-demo-repo
+    Default: repo
     AllowedPattern: "[\\x20-\\x7E]*"
     ConstraintDescription: Can contain only ASCII characters.
   #CodeBuild
-  BuildProjectName:
-    Description: Name of the CodeCommit build project
-    Type: String
-    Default: jekyll-build-project
-    AllowedPattern: "[\\x20-\\x7E]*"
-    ConstraintDescription: Can contain only ASCII characters.
+  #BuildProjectName:
+  #  Description: Name of the CodeCommit build project
+  #  Type: String
+  #  Default: jekyll-build-project
+  #  AllowedPattern: "[\\x20-\\x7E]*"
+  #  ConstraintDescription: Can contain only ASCII characters.
   RepositoryBranch:
     Description: Name of the CodeCommit branch to build from
     Type: String
@@ -53,8 +51,8 @@ Parameters:
   #S3
   S3BucketPrefix:
     Type: String
-    Default: jekyll-demo-website
-    Description: Name of the S3 bucket prefix where deployments will be pushed
+    Default: website
+    Description: Prefix of the S3 bucket where websites will be deployed - this will be prefixed with the Stack Name.
   S3StagingAccessControl:
     Type: String
     Default: Private
@@ -84,24 +82,30 @@ Resources:
         TTL: 900
         ResourceRecords: 
         - !GetAtt [CloudFrontDistro, DomainName]
+  #!Ref Route53HostedZone #returns hosted zone ID
+  #!GetAtt [Route53HostedZone, NameServers]
 
 
   #IAM Group & Permissions
   CodeCommitIAMGroup:
     Type: AWS::IAM::Group
     Properties: 
-      GroupName: !Ref 'CodeCommitGroup'
+      GroupName: !Sub '${AWS::StackName}-${CodeCommitGroup}'
       Path: !Sub '/${AWS::StackName}/'
       ManagedPolicyArns: 
         - !Ref CodeCommitIAMManagedPolicy
-      #Path: String
       #Policies: 
       #  - !Ref 'CodeCommitIAMPolicy'
+  #!Ref CodeCommitIAMGroup #returns the group name
+  #!GetAtt [CodeCommitIAMGroup, Arn]
+
   CodeCommitIAMManagedPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      ManagedPolicyName: !Join ['', [!Ref 'AWS::StackName', '-codecommit-policy']]
-      Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
+      #ManagedPolicyName: !Join ['', [!Ref 'AWS::StackName', '-codecommit-policy']]
+      ManagedPolicyName: !Sub '${AWS::StackName}-codecommit-policy'
+      #Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
+      Path: !Sub '/${AWS::StackName}/'
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -110,12 +114,18 @@ Resources:
               - 'codecommit:GitPull'
               - 'codecommit:GitPush'
             Resource: !GetAtt [CodeCommitRepo, Arn]
+  #!Ref CodeCommitIAMManagedPolicy #returns ARN
+
   ###
+  #ToDo - Policy to Managed Policy
   CodeBuildServicePolicy:
     Type: AWS::IAM::Policy
     Properties:
       #ManagedPolicyName: !Join ['', [!Ref 'AWS::StackName', '-codebuild-policy']]
       #Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
+      PolicyName: !Sub '${AWS::StackName}-codebuild-service-policy'
+      Roles: 
+        - !Ref CodeBuildServiceRole
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -165,9 +175,9 @@ Resources:
           - !GetAtt [S3StagingBucket, Arn]
           - !Sub '${S3ProdBucket.Arn}/*'
           - !Sub '${S3StagingBucket.Arn}/*'
-      PolicyName: jekyll-codebuild-service-policy
-      Roles: 
-        - !Ref CodeBuildServiceRole
+      #PolicyName: !Sub '${AWS::StackName}-codebuild-service-policy'
+      #Roles: 
+      #  - !Ref CodeBuildServiceRole
   #!Ref CodeBuildServicePolicy #returns policy name
 
   CodeBuildServiceRole:
@@ -184,16 +194,20 @@ Resources:
       Description: A role to allow codebuild to do it's thing
       #Path: !Sub '/${AWS::StackName}/service-role/'
       Path: !Sub '/${AWS::StackName}/'
-      RoleName: jekyll-codebuild-service-role
+      RoleName: !Sub '${AWS::StackName}-codebuild-service-role'
   #!Ref CodeBuildServiceRole #(role name)
   #!GetAtt [CodeBuildServiceRole , Arn]
   #!GetAtt [CodeBuildServiceRole , RoleId]
   ###
 
   ###
+  #ToDo - Policy to Managed Policy
   CodePipelineServicePolicy:
     Type: AWS::IAM::Policy
     Properties:
+      PolicyName: !Sub '${AWS::StackName}-codepipeline-service-policy'
+      Roles: 
+        - !Ref CodePipelineServiceRole
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -310,9 +324,9 @@ Resources:
           Action:
           - ecr:DescribeImages
           Resource: "*"
-      PolicyName: jekyll-codepipeline-service-policy
-      Roles: 
-        - !Ref CodePipelineServiceRole
+      #PolicyName: jekyll-codepipeline-service-policy
+      #Roles: 
+      #  - !Ref CodePipelineServiceRole
   #!Ref CodePipelineServicePolicy #returns policy name
 
   CodePipelineServiceRole:
@@ -327,8 +341,8 @@ Resources:
             - codepipeline.amazonaws.com
           Action: sts:AssumeRole
       Description: A role to allow codepipeline to do it's thing
-      Path: !Sub '/${AWS::StackName}/service-role/'
-      RoleName: jekyll-pipeline-service-role
+      Path: !Sub '/${AWS::StackName}/'
+      RoleName: !Sub '${AWS::StackName}-pipeline-service-role'
   #!Ref CodePipelineServiceRole #(role name)
   #!GetAtt [CodePipelineServiceRole , Arn]
   #!GetAtt [CodePipelineServiceRole , RoleId]
@@ -338,9 +352,8 @@ Resources:
   CodeCommitRepo:
     Type: AWS::CodeCommit::Repository
     Properties: 
-      #RepositoryDescription: String
-      RepositoryName: 
-        Ref: RepositoryName
+      RepositoryDescription: !Sub 'Code Repository for DomainName'
+      RepositoryName: !Sub '${AWS::StackName}-${RepositoryName}'
       #Tags: 
       #  - Tag
       #Triggers: 
@@ -369,7 +382,7 @@ Resources:
       #BadgeEnabled: Boolean
       #Cache: 
       #  ProjectCache
-      Description: Jekyll static-site builder
+      Description: !Sub '${AWS::StackName} static-website builder'
       #EncryptionKey: String
       Environment: 
         #Certificate: String
@@ -385,7 +398,7 @@ Resources:
         Type: LINUX_CONTAINER
       #LogsConfig: 
       #  LogsConfig
-      Name: !Ref BuildProjectName
+      Name: !Sub '${AWS::StackName}-build-project'
       #QueuedTimeoutInMinutes: 10
       #SecondaryArtifacts: 
       #  - Artifacts
@@ -543,7 +556,8 @@ Resources:
       #BucketEncryption: 
       #  BucketEncryption
       BucketName:
-        !Join ['', [!Ref 'S3BucketPrefix', '-prod']]
+        !Sub '${AWS::StackName}-${S3BucketPrefix}-prod'
+        #!Join ['', [!Ref 'S3BucketPrefix', '-prod']]
         #Fn::Join:
         #- ''
         #- - !Ref 'S3BucketPrefix'
@@ -587,23 +601,26 @@ Resources:
     DependsOn: CloudFrontDistro
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref 'S3ProdBucket'
+      Bucket: !Ref S3ProdBucket
       PolicyDocument:
         Statement:
           - Action: ['s3:GetObject']
             Effect: Allow
             Principal:
-              AWS: !Join ['', ['arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ', !Ref 'CloudfrontOAI']]
+              #AWS: !Join ['', ['arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ', !Ref 'CloudfrontOAI']]
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudfrontOAI}'
             Resource:
-              !Join ['', ['arn:aws:s3:::', !Ref 'S3ProdBucket', /*]]
+              !Sub 'arn:aws:s3:::${S3ProdBucket}/*'
+              #!Join ['', ['arn:aws:s3:::', !Ref 'S3ProdBucket', /*]]
 
 
   S3StagingBucket:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: 
-        !Join ['', [!Ref 'S3BucketPrefix', '-staging']]
-      AccessControl: !Ref 'S3StagingAccessControl'
+        #!Join ['', [!Ref 'S3BucketPrefix', '-staging']]
+        !Sub ${AWS::StackName}-${S3BucketPrefix}-staging
+      AccessControl: !Ref S3StagingAccessControl
       PublicAccessBlockConfiguration: 
         BlockPublicAcls: True
         BlockPublicPolicy: True
@@ -619,11 +636,13 @@ Resources:
   #!GetAtt [S3StagingBucket, RegionalDomainName] #Returns the regional domain name of the specified bucket
   #!GetAtt [S3StagingBucket, WebsiteURL]
 
+  #ToDo lifecycle policy to clean out bucket
   CodePipelineS3ArtifactLocation:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: 
-        !Sub 'codepipeline-${AWS::Region}-${AWS::AccountId}'
+        #!Sub 'codepipeline-${AWS::Region}-${AWS::AccountId}'
+        !Sub 'codepipeline-${AWS::StackName}-artifacts'
       PublicAccessBlockConfiguration: 
         BlockPublicAcls: True
         BlockPublicPolicy: True
@@ -653,7 +672,8 @@ Resources:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
     Properties: 
       CloudFrontOriginAccessIdentityConfig: 
-        Comment: !Join ['', ['access-identity-', !GetAtt [S3ProdBucket, DomainName]]]
+        #Comment: !Join ['', ['access-identity-', !GetAtt [S3ProdBucket, DomainName]]]
+        Comment: !Sub 'access-identity-${S3ProdBucket.DomainName}'
 
   CloudFrontDistro:
     DependsOn: 
@@ -693,7 +713,8 @@ Resources:
               #MaxTTL: Double
               #MinTTL: Double
               SmoothStreaming: False
-              TargetOriginId: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
+              #TargetOriginId: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
+              TargetOriginId: !Sub 'S3-${S3ProdBucket}'
               #TrustedSigners: 
               #  - String
               ViewerProtocolPolicy: allow-all
@@ -707,12 +728,14 @@ Resources:
               #CustomOriginConfig: 
               #  CustomOriginConfig
             - DomainName: !GetAtt [S3ProdBucket, DomainName]
-              Id: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
+              #Id: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
+              Id: !Sub 'S3-${S3ProdBucket}'
               #OriginCustomHeaders: 
               #  - OriginCustomHeader
               #OriginPath: String
               S3OriginConfig: 
-                OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref 'CloudfrontOAI']]
+                #OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref 'CloudfrontOAI']]
+                OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudfrontOAI}'
           #PriceClass: String
           #Restrictions: 
           #  Restrictions
@@ -728,7 +751,7 @@ Outputs:
   StagingURL:
     Value: !GetAtt [S3StagingBucket, WebsiteURL]
   HostedZoneID:
-    Value: !Ref 'Route53HostedZone'
+    Value: !Ref Route53HostedZone
   DomainNameNS:
     Value: !Join [', ', !GetAtt [Route53HostedZone, NameServers]]
   CFDistroURL:
