@@ -3,7 +3,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Parameters:
   LambdaEdgeFunctionName:
     Type: String
-    Default: lambda-cloudfront-simple-urls
+    Default: cloudfront-simple-urls
 
 Resources:
   LambdaEdgePolicy:
@@ -19,14 +19,15 @@ Resources:
           - logs:PutLogEvents
           Resource:
           - arn:aws:logs:*:*:*
-      PolicyName: lambda-cloudfront-simple-urls-policy
+      PolicyName: !Sub '${AWS::StackName}-policy'
       Roles: 
         - !Ref LambdaEdgeRole
-  #!Ref LambdaEdgePolicy #(policy name)
+  #!Ref LambdaEdgePolicy #returns policy name
       
   LambdaEdgeRole:
     Type: AWS::IAM::Role
     Properties: 
+      RoleName: !Sub '${AWS::StackName}-role'
       AssumeRolePolicyDocument: 
         Version: '2012-10-17'
         Statement:
@@ -37,16 +38,6 @@ Resources:
             - edgelambda.amazonaws.com
           Action: sts:AssumeRole
       Description: A role to support the custom Lambda@Edge function for simple URLs from CloudFront Distribution
-      #ManagedPolicyArns: 
-      #  - String
-      #MaxSessionDuration: Integer
-      #Path: String
-      #PermissionsBoundary: String
-      #Policies: 
-      #  - Policy
-      RoleName: lambda-cloudfront-simple-urls-role
-      #Tags: 
-      #  - Tag
   #!Ref LambdaEdgeRole #(role name)
   #!GetAtt [LambdaEdgeRole , Arn]
   #!GetAtt [LambdaEdgeRole , RoleId]
@@ -54,27 +45,11 @@ Resources:
   LambdaEdgeFunction:
     Type: AWS::Lambda::Function
     Properties: 
-      #DeadLetterConfig: 
-      #  DeadLetterConfig
       Description: A custom Lambda@Edge function for simple URLs from CloudFront Distribution
-      #Environment: 
-      #  Environment
       FunctionName: !Ref LambdaEdgeFunctionName
       Handler: index.handler
-      #KmsKeyArn: String
-      #Layers: 
-      #  - String
-      #MemorySize: Integer
-      #ReservedConcurrentExecutions: Integer
       Role: !GetAtt [LambdaEdgeRole , Arn]
       Runtime: nodejs10.x
-      #Tags: 
-      #  - Tag
-      #Timeout: Integer
-      #TracingConfig: 
-      #  TracingConfig
-      #VpcConfig: 
-      #  VpcConfig
       Code: 
         ZipFile: !Sub |
             'use strict';
@@ -106,11 +81,7 @@ Resources:
   LambdaEdgeFunctionVersion:
     Type: AWS::Lambda::Version
     Properties: 
-      #CodeSha256: String
-      #Description: String
       FunctionName: !GetAtt [LambdaEdgeFunction, Arn]
-      #ProvisionedConcurrencyConfig: 
-      #  ProvisionedConcurrencyConfiguration
   #!Ref LambdaEdgeFunctionVersion #(function version arn)
   #!GetAtt [LambdaEdgeFunctionVersion, Version]
 
