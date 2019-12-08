@@ -35,13 +35,6 @@ Parameters:
     Default: repo
     AllowedPattern: "[\\x20-\\x7E]*"
     ConstraintDescription: Can contain only ASCII characters.
-  #CodeBuild
-  #BuildProjectName:
-  #  Description: Name of the CodeCommit build project
-  #  Type: String
-  #  Default: jekyll-build-project
-  #  AllowedPattern: "[\\x20-\\x7E]*"
-  #  ConstraintDescription: Can contain only ASCII characters.
   RepositoryBranch:
     Description: Name of the CodeCommit branch to build from
     Type: String
@@ -66,6 +59,8 @@ Resources:
     Type: AWS::Route53::HostedZone
     Properties: 
       Name: !Ref DomainName
+  #!Ref Route53HostedZone #returns hosted zone ID
+  #!GetAtt [Route53HostedZone, NameServers]
   Route53Record:
     DependsOn: CloudFrontDistro
     Type: AWS::Route53::RecordSetGroup
@@ -82,11 +77,9 @@ Resources:
         TTL: 900
         ResourceRecords: 
         - !GetAtt [CloudFrontDistro, DomainName]
-  #!Ref Route53HostedZone #returns hosted zone ID
-  #!GetAtt [Route53HostedZone, NameServers]
-
-
-  #IAM Group & Permissions
+  
+  
+  #IAM Groups
   CodeCommitIAMGroup:
     Type: AWS::IAM::Group
     Properties: 
@@ -94,17 +87,15 @@ Resources:
       Path: !Sub '/${AWS::StackName}/'
       ManagedPolicyArns: 
         - !Ref CodeCommitIAMManagedPolicy
-      #Policies: 
-      #  - !Ref 'CodeCommitIAMPolicy'
   #!Ref CodeCommitIAMGroup #returns the group name
   #!GetAtt [CodeCommitIAMGroup, Arn]
 
+
+  #IAM Policies
   CodeCommitIAMManagedPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      #ManagedPolicyName: !Join ['', [!Ref 'AWS::StackName', '-codecommit-policy']]
       ManagedPolicyName: !Sub '${AWS::StackName}-codecommit-policy'
-      #Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
       Path: !Sub '/${AWS::StackName}/'
       PolicyDocument:
         Version: 2012-10-17
@@ -115,14 +106,11 @@ Resources:
               - 'codecommit:GitPush'
             Resource: !GetAtt [CodeCommitRepo, Arn]
   #!Ref CodeCommitIAMManagedPolicy #returns ARN
-
-  ###
-  #ToDo - Policy to Managed Policy
   CodeBuildServicePolicy:
     Type: AWS::IAM::Policy
+    #Type: AWS::IAM::ManagedPolicy
     Properties:
-      #ManagedPolicyName: !Join ['', [!Ref 'AWS::StackName', '-codebuild-policy']]
-      #Path: !Join ['', [/, !Ref 'AWS::StackName', /]]
+      #ManagedPolicyName: !Sub '${AWS::StackName}-codebuild-service-policy'
       PolicyName: !Sub '${AWS::StackName}-codebuild-service-policy'
       Roles: 
         - !Ref CodeBuildServiceRole
@@ -141,10 +129,10 @@ Resources:
         ###
         - Effect: Allow
           Resource:
-          - !Sub 'arn:aws:s3:::codepipeline-${AWS::Region}-${AWS::AccountId}'
-          - !Sub 'arn:aws:s3:::codepipeline-${AWS::Region}-${AWS::AccountId}/*'
+          - !Sub '${CodePipelineS3ArtifactLocation.Arn}'
+          - !Sub '${CodePipelineS3ArtifactLocation.Arn}/*'
           Action:
-          - s3:PutObject
+          #- s3:PutObject
           - s3:GetObject
           - s3:GetObjectVersion
           - s3:GetBucketAcl
@@ -175,37 +163,19 @@ Resources:
           - !GetAtt [S3StagingBucket, Arn]
           - !Sub '${S3ProdBucket.Arn}/*'
           - !Sub '${S3StagingBucket.Arn}/*'
-      #PolicyName: !Sub '${AWS::StackName}-codebuild-service-policy'
-      #Roles: 
-      #  - !Ref CodeBuildServiceRole
-  #!Ref CodeBuildServicePolicy #returns policy name
-
-  CodeBuildServiceRole:
-    Type: AWS::IAM::Role
-    Properties: 
-      AssumeRolePolicyDocument: 
-        Version: '2012-10-17'
-        Statement:
         - Effect: Allow
-          Principal:
-            Service:
-            - codebuild.amazonaws.com
-          Action: sts:AssumeRole
-      Description: A role to allow codebuild to do it's thing
-      #Path: !Sub '/${AWS::StackName}/service-role/'
-      Path: !Sub '/${AWS::StackName}/'
-      RoleName: !Sub '${AWS::StackName}-codebuild-service-role'
-  #!Ref CodeBuildServiceRole #(role name)
-  #!GetAtt [CodeBuildServiceRole , Arn]
-  #!GetAtt [CodeBuildServiceRole , RoleId]
-  ###
-
-  ###
-  #ToDo - Policy to Managed Policy
+          Action:
+          - cloudfront:CreateInvalidation
+          Resource:
+          - !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistro}'
+  #!Ref CodeBuildServicePolicy #returns policy name
   CodePipelineServicePolicy:
     Type: AWS::IAM::Policy
+    #Type: AWS::IAM::ManagedPolicy
     Properties:
       PolicyName: !Sub '${AWS::StackName}-codepipeline-service-policy'
+      #ManagedPolicyName: !Sub '${AWS::StackName}-codepipeline-service-policy'
+      #Path: !Sub '/${AWS::StackName}/'
       Roles: 
         - !Ref CodePipelineServiceRole
       PolicyDocument:
@@ -213,125 +183,77 @@ Resources:
         Statement:
         ###
         - Action:
-          - iam:PassRole
-          Resource: "*"
-          Effect: Allow
-          Condition:
-            StringEqualsIfExists:
-              iam:PassedToService:
-              - cloudformation.amazonaws.com
-              - elasticbeanstalk.amazonaws.com
-              - ec2.amazonaws.com
-              - ecs-tasks.amazonaws.com
-        ###
-        - Action:
           - codecommit:CancelUploadArchive
           - codecommit:GetBranch
           - codecommit:GetCommit
           - codecommit:GetUploadArchiveStatus
           - codecommit:UploadArchive
-          Resource: "*"
+          Resource: !GetAtt [CodeCommitRepo, Arn]
           Effect: Allow
         ###
-        - Action:
-          - codedeploy:CreateDeployment
-          - codedeploy:GetApplication
-          - codedeploy:GetApplicationRevision
-          - codedeploy:GetDeployment
-          - codedeploy:GetDeploymentConfig
-          - codedeploy:RegisterApplicationRevision
-          Resource: "*"
-          Effect: Allow
-        ###
-        - Action:
-          - elasticbeanstalk:*
-          - ec2:*
-          - elasticloadbalancing:*
-          - autoscaling:*
-          - cloudwatch:*
-          - s3:*
-          - sns:*
-          - cloudformation:*
-          - rds:*
-          - sqs:*
-          - ecs:*
-          Resource: "*"
-          Effect: Allow
-        ###
-        - Action:
-          - lambda:InvokeFunction
-          - lambda:ListFunctions
-          Resource: "*"
-          Effect: Allow
-        ###
-        - Action:
-          - opsworks:CreateDeployment
-          - opsworks:DescribeApps
-          - opsworks:DescribeCommands
-          - opsworks:DescribeDeployments
-          - opsworks:DescribeInstances
-          - opsworks:DescribeStacks
-          - opsworks:UpdateApp
-          - opsworks:UpdateStack
-          Resource: "*"
-          Effect: Allow
-        ###
-        - Action:
-          - cloudformation:CreateStack
-          - cloudformation:DeleteStack
-          - cloudformation:DescribeStacks
-          - cloudformation:UpdateStack
-          - cloudformation:CreateChangeSet
-          - cloudformation:DeleteChangeSet
-          - cloudformation:DescribeChangeSet
-          - cloudformation:ExecuteChangeSet
-          - cloudformation:SetStackPolicy
-          - cloudformation:ValidateTemplate
-          Resource: "*"
-          Effect: Allow
+        - Effect: Allow
+          Resource:
+          - !Sub '${CodePipelineS3ArtifactLocation.Arn}'
+          - !Sub '${CodePipelineS3ArtifactLocation.Arn}/*'
+          Action:
+          - s3:PutObject
+          - s3:GetObject
+          - s3:GetObjectVersion
+          - s3:GetBucketAcl
+          - s3:GetBucketLocation
         ###
         - Action:
           - codebuild:BatchGetBuilds
           - codebuild:StartBuild
-          Resource: "*"
+          Resource: !GetAtt [CodeBuild, Arn]
           Effect: Allow
         ###
-        - Effect: Allow
-          Action:
-          - devicefarm:ListProjects
-          - devicefarm:ListDevicePools
-          - devicefarm:GetRun
-          - devicefarm:GetUpload
-          - devicefarm:CreateUpload
-          - devicefarm:ScheduleRun
-          Resource: "*"
-        ###
-        - Effect: Allow
-          Action:
-          - servicecatalog:ListProvisioningArtifacts
-          - servicecatalog:CreateProvisioningArtifact
-          - servicecatalog:DescribeProvisioningArtifact
-          - servicecatalog:DeleteProvisioningArtifact
-          - servicecatalog:UpdateProduct
-          Resource: "*"
-        ###
-        - Effect: Allow
-          Action:
-          - cloudformation:ValidateTemplate
-          Resource: "*"
-        ###
-        - Effect: Allow
-          Action:
-          - ecr:DescribeImages
-          Resource: "*"
-      #PolicyName: jekyll-codepipeline-service-policy
-      #Roles: 
-      #  - !Ref CodePipelineServiceRole
   #!Ref CodePipelineServicePolicy #returns policy name
+  CloudWatchEventPolicy:
+    Type: AWS::IAM::Policy
+    #Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-cloudwatch-events-policy'
+      #ManagedPolicyName: !Sub '${AWS::StackName}-cloudwatch-events-policy'
+      #Path: !Sub '/${AWS::StackName}/'
+      Roles: 
+        - !Ref CloudWatchEventServiceRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'codepipeline:StartPipelineExecution'
+            Resource: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipeline}'
+  #!Ref CloudWatchEventPolicy #returns ARN
 
+
+  # IAM Roles
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      #ManagedPolicyArns:
+      #  - !Ref CodeBuildServiceManagedPolicy
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - codebuild.amazonaws.com
+            - cloudfront.amazonaws.com
+          Action: sts:AssumeRole
+      Description: A role to allow codebuild to do it's thing
+      Path: !Sub '/${AWS::StackName}/'
+      RoleName: !Sub '${AWS::StackName}-codebuild-service-role'
+  #!Ref CodeBuildServiceRole #(role name)
+  #!GetAtt [CodeBuildServiceRole , Arn]
+  #!GetAtt [CodeBuildServiceRole , RoleId]
   CodePipelineServiceRole:
     Type: AWS::IAM::Role
     Properties: 
+      #ManagedPolicyArns:
+      #  - !Ref CodePipelineServiceManagedPolicy
       AssumeRolePolicyDocument: 
         Version: '2012-10-17'
         Statement:
@@ -346,18 +268,33 @@ Resources:
   #!Ref CodePipelineServiceRole #(role name)
   #!GetAtt [CodePipelineServiceRole , Arn]
   #!GetAtt [CodePipelineServiceRole , RoleId]
-  ###
+  CloudWatchEventServiceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      #ManagedPolicyArns: 
+      #  - !Ref CloudWatchEventManagedPolicy
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+          Action: sts:AssumeRole
+      Description: A role to allow cloudwatch events to trigger the build pipeline
+      Path: !Sub '/${AWS::StackName}/'
+      RoleName: !Sub '${AWS::StackName}-cloudwatch-events-service-role'
+  #!Ref CloudWatchEventServiceRole #(role name)
+  #!GetAtt [CloudWatchEventServiceRole , Arn]
+  #!GetAtt [CloudWatchEventServiceRole , RoleId]
+
 
   #CodeCommit Repo
   CodeCommitRepo:
     Type: AWS::CodeCommit::Repository
     Properties: 
-      RepositoryDescription: !Sub 'Code Repository for DomainName'
+      RepositoryDescription: !Sub 'Code Repository for ${DomainName}'
       RepositoryName: !Sub '${AWS::StackName}-${RepositoryName}'
-      #Tags: 
-      #  - Tag
-      #Triggers: 
-      #  - RepositoryTrigger
   #!Ref CodeCommitRepo #return repo ID
   #!GetAtt [CodeCommitRepo, Arn]
   #!GetAtt [CodeCommitRepo, CloneUrlHttp]
@@ -365,93 +302,70 @@ Resources:
   #!GetAtt [CodeCommitRepo, Name] #return repo name
 
 
+  #CloudWatch Event
+  CloudWatchEvent:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: CloudWatch Events rule to automatically start the pipeline when a change occurs in the CodeCommit repository.
+      EventPattern:
+        source:
+        - aws.codecommit
+        detail-type:
+        - CodeCommit Repository State Change
+        resources:
+        - !GetAtt [CodeCommitRepo, Arn]
+        detail:
+          event:
+          - referenceCreated
+          - referenceUpdated
+          referenceType:
+          - branch
+          referenceName:
+          - !Ref RepositoryBranch
+      Name: !Sub ${AWS::StackName}-codepipeline-rule
+      State: ENABLED
+      Targets: 
+        - RoleArn: !GetAtt [CloudWatchEventServiceRole , Arn]
+          Arn: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipeline}'
+          Id: 1
+  #!Ref CloudWatchEvent #returns the event rule ID
+  #!GetAtt [CloudWatchEvent, Arn]
+
+
   #CodeBuild Project
   CodeBuild:
     Type: AWS::CodeBuild::Project
     Properties: 
       Artifacts: 
-        #ArtifactIdentifier: String
-        #EncryptionDisabled: Boolean
-        #Location: String
-        #Name: String
-        #NamespaceType: String
-        #OverrideArtifactName: Boolean
-        #Packaging: String
-        #Path: String
         Type: NO_ARTIFACTS
-      #BadgeEnabled: Boolean
-      #Cache: 
-      #  ProjectCache
       Description: !Sub '${AWS::StackName} static-website builder'
-      #EncryptionKey: String
       Environment: 
-        #Certificate: String
         ComputeType: BUILD_GENERAL1_SMALL
-        #EnvironmentVariables: 
-        #  - EnvironmentVariable
-        #Image: aws/codebuild/amazonlinux2-x86_64-standard:2.0
         Image: aws/codebuild/amazonlinux2-x86_64-standard:2.0
-        #ImagePullCredentialsType: String
-        #PrivilegedMode: Boolean
-        #RegistryCredential: 
-        #  RegistryCredential
         Type: LINUX_CONTAINER
-      #LogsConfig: 
-      #  LogsConfig
       Name: !Sub '${AWS::StackName}-build-project'
-      #QueuedTimeoutInMinutes: 10
-      #SecondaryArtifacts: 
-      #  - Artifacts
-      #SecondarySources: 
-      #  - Source
-      #SecondarySourceVersions: 
-      #  - ProjectSourceVersion
       ServiceRole: !GetAtt [CodeBuildServiceRole , Arn]
       Source: 
-        #Auth: 
-        #  SourceAuth
-        #BuildSpec: String
         GitCloneDepth: 1
-        #GitSubmodulesConfig: 
-        #  GitSubmodulesConfig
-        #InsecureSsl: Boolean
         Location: !GetAtt [CodeCommitRepo, CloneUrlHttp]
-        #ReportBuildStatus: Boolean
-        #SourceIdentifier: String
         Type: CODECOMMIT
       SourceVersion: !Sub 'refs/heads/${RepositoryBranch}'
-      #Tags: 
-      #  - Tag
-      #TimeoutInMinutes: 60
-      #Triggers: 
-      #  ProjectTriggers
-      #VpcConfig: 
-      #  VpcConfig
   #!Ref CodeBuild #returns project name
   #!GetAtt [CodeBuild, Arn]
+
 
   #CodePipeline
   CodePipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties: 
       ArtifactStore: 
-          #EncryptionKey: 
-          #  EncryptionKey
-          Location: !Sub 'codepipeline-${AWS::Region}-${AWS::AccountId}'
-          #Location: !Sub 'codepipeline-${AWS::Region}-73556003381'
+          Location: !Ref CodePipelineS3ArtifactLocation
           Type: S3
-      #ArtifactStores: 
-      #  - ArtifactStoreMap
-      #DisableInboundStageTransitions: 
-      #  - StageTransition
       Name: !Sub '${AWS::StackName}-pipeline'
-      #RestartExecutionOnUpdate: Boolean
       RoleArn: !GetAtt [CodePipelineServiceRole , Arn]
       Stages: 
         ###
         - Name: Source
-          #Blockers: 
-          #  - BlockerDeclaration
           Actions: 
             - ActionTypeId:
                 Category: Source
@@ -460,22 +374,15 @@ Resources:
                 Version: 1
               Configuration:
                 BranchName: !Ref RepositoryBranch
-                #RepositoryName: !Ref CodeCommitRepo
                 RepositoryName: !GetAtt [CodeCommitRepo, Name]
                 PollForSourceChanges: false
-              #InputArtifacts: 
-              #  - InputArtifact
               Name: Source
-              #Namespace: Source
               OutputArtifacts: 
                 - Name: SourceArtifact
               Region: !Sub ${AWS::Region}
-              #RoleArn: String
               RunOrder: 1
         ###
         - Name: Jekyll-Staging-Build
-          #Blockers: 
-          #  - BlockerDeclaration
           Actions: 
             - ActionTypeId: 
                 Category: Build
@@ -484,21 +391,16 @@ Resources:
                 Version: 1
               Configuration:
                 ProjectName: !Ref CodeBuild
-                #PrimarySource: SourceArtifact
                 EnvironmentVariables: !Sub '[{"name":"S3_URL","value":"${S3StagingBucket}","type":"PLAINTEXT"}]'
               InputArtifacts: 
                 - Name: SourceArtifact
               Name: Jekyll-Staging-Build
-              #Namespace: Staging
               OutputArtifacts: 
                 - Name: StagingBuildArtifact
               Region: !Sub ${AWS::Region}
-              #RoleArn: String
               RunOrder: 2
         ###
         - Name: Jekyll-Production-Build
-          #Blockers: 
-          #  - BlockerDeclaration
           Actions: 
             - ActionTypeId: 
                 Category: Build
@@ -507,21 +409,16 @@ Resources:
                 Version: 1
               Configuration:
                 ProjectName: !Ref CodeBuild
-                #PrimarySource: SourceArtifact
                 EnvironmentVariables: !Sub '[{"name":"S3_URL","value":"${S3ProdBucket}","type":"PLAINTEXT"}]'
               InputArtifacts: 
                 - Name: SourceArtifact
               Name: Jekyll-Production-Build
-              #Namespace: Production
               OutputArtifacts: 
                 - Name: ProductionBuildArtifact
               Region: !Sub ${AWS::Region}
-              #RoleArn: String
               RunOrder: 3
         ###
         - Name: Update-Cloudfront
-          #Blockers: 
-          #  - BlockerDeclaration
           Actions: 
             - ActionTypeId: 
                 Category: Build
@@ -530,64 +427,27 @@ Resources:
                 Version: 1
               Configuration:
                 ProjectName: !Ref CodeBuild
-                #PrimarySource: SourceArtifact
                 EnvironmentVariables: !Sub '[{"name":"CDN_DISTRIBUTION_ID","value":"${CloudFrontDistro}","type":"PLAINTEXT"}]'
               InputArtifacts: 
                 - Name: SourceArtifact
               Name: Update-Cloudfront
-              #Namespace: Production
-              #OutputArtifacts: 
-              #  - Name: ProductionBuildArtifact
               Region: !Sub ${AWS::Region}
-              #RoleArn: String
               RunOrder: 4
-      #Tags: 
-      #  - Tag
+  #!Ref CodePipeline #returns pipeline name
+  #!GetAtt [CodePipeline, Version] #pipeline version number
+
 
   #S3 buckets
   S3ProdBucket:
     Type: AWS::S3::Bucket
     Properties: 
-      #AccelerateConfiguration: 
-      #  AccelerateConfiguration
-      #AccessControl: String
-      #AnalyticsConfigurations: 
-      #  - AnalyticsConfiguration
-      #BucketEncryption: 
-      #  BucketEncryption
       BucketName:
         !Sub '${AWS::StackName}-${S3BucketPrefix}-prod'
-        #!Join ['', [!Ref 'S3BucketPrefix', '-prod']]
-        #Fn::Join:
-        #- ''
-        #- - !Ref 'S3BucketPrefix'
-        #  - '-prod'
-      #CorsConfiguration: 
-      #  CorsConfiguration
-      #InventoryConfigurations: 
-      #  - InventoryConfiguration
-      #LifecycleConfiguration: 
-      #  LifecycleConfiguration
-      #LoggingConfiguration: 
-      #  LoggingConfiguration
-      #MetricsConfigurations: 
-      #  - MetricsConfiguration
-      #NotificationConfiguration: 
-      #  NotificationConfiguration
-      #ObjectLockConfiguration: 
-      #  ObjectLockConfiguration
-      #ObjectLockEnabled: Boolean
       PublicAccessBlockConfiguration: 
         BlockPublicAcls: True
         BlockPublicPolicy: True
         IgnorePublicAcls: True
         RestrictPublicBuckets: True
-      #ReplicationConfiguration: 
-      #  ReplicationConfiguration
-      #Tags: 
-      #  - Tag
-      #VersioningConfiguration: 
-      #  VersioningConfiguration
       WebsiteConfiguration: 
         ErrorDocument: 404.html
         IndexDocument: index.html
@@ -607,20 +467,21 @@ Resources:
           - Action: ['s3:GetObject']
             Effect: Allow
             Principal:
-              #AWS: !Join ['', ['arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ', !Ref 'CloudfrontOAI']]
               AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudfrontOAI}'
             Resource:
               !Sub 'arn:aws:s3:::${S3ProdBucket}/*'
-              #!Join ['', ['arn:aws:s3:::', !Ref 'S3ProdBucket', /*]]
-
 
   S3StagingBucket:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: 
-        #!Join ['', [!Ref 'S3BucketPrefix', '-staging']]
         !Sub ${AWS::StackName}-${S3BucketPrefix}-staging
       AccessControl: !Ref S3StagingAccessControl
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 7
+            Id: Delete items after 7 days
+            Status: Enabled
       PublicAccessBlockConfiguration: 
         BlockPublicAcls: True
         BlockPublicPolicy: True
@@ -636,13 +497,16 @@ Resources:
   #!GetAtt [S3StagingBucket, RegionalDomainName] #Returns the regional domain name of the specified bucket
   #!GetAtt [S3StagingBucket, WebsiteURL]
 
-  #ToDo lifecycle policy to clean out bucket
   CodePipelineS3ArtifactLocation:
     Type: AWS::S3::Bucket
     Properties: 
       BucketName: 
-        #!Sub 'codepipeline-${AWS::Region}-${AWS::AccountId}'
-        !Sub 'codepipeline-${AWS::StackName}-artifacts'
+        !Sub '${AWS::StackName}-codepipeline-artifacts'
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 7
+            Id: Delete items after 7 days
+            Status: Enabled
       PublicAccessBlockConfiguration: 
         BlockPublicAcls: True
         BlockPublicPolicy: True
@@ -667,14 +531,15 @@ Resources:
   #          Resource:
   #            !Join ['', ['arn:aws:s3:::', !Ref 'S3StagingBucket', /*]]
 
+
   #Create Cloudfront Distro
   CloudfrontOAI:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
     Properties: 
       CloudFrontOriginAccessIdentityConfig: 
-        #Comment: !Join ['', ['access-identity-', !GetAtt [S3ProdBucket, DomainName]]]
         Comment: !Sub 'access-identity-${S3ProdBucket.DomainName}'
-
+  #!Ref CloudfrontOAI #returns the origin access identity
+  #!GetAtt [CloudfrontOAI , S3CanonicalUserId]
   CloudFrontDistro:
     DependsOn: 
       - S3ProdBucket
@@ -682,11 +547,6 @@ Resources:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
-          #Aliases: 
-          #  - !Ref 'WebsiteURL'
-          #CacheBehaviors: 
-          #  - CacheBehavior
-          #Comment: String
           CustomErrorResponses: 
             - ErrorCachingMinTTL: 300
               ErrorCode: 404
@@ -700,50 +560,28 @@ Resources:
                 - GET
                 - HEAD
               Compress: True
-              #DefaultTTL: Double
-              #FieldLevelEncryptionId: String
               ForwardedValues: 
                 QueryString: False
                 Cookies:
                   Forward: none
-              #ToDo associated the lambda@edge to the distro
               LambdaFunctionAssociations:
                 - EventType: origin-request
                   LambdaFunctionARN: !Ref LambdaEdgeStackARN
-              #MaxTTL: Double
-              #MinTTL: Double
               SmoothStreaming: False
-              #TargetOriginId: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
               TargetOriginId: !Sub 'S3-${S3ProdBucket}'
-              #TrustedSigners: 
-              #  - String
               ViewerProtocolPolicy: allow-all
           DefaultRootObject: index.html
           Enabled: True
           HttpVersion: http2
           IPV6Enabled: True
-          #Logging: 
-          #  Logging
           Origins: 
-              #CustomOriginConfig: 
-              #  CustomOriginConfig
             - DomainName: !GetAtt [S3ProdBucket, DomainName]
-              #Id: !Join ['', ['S3-', !Ref 'S3ProdBucket']]
               Id: !Sub 'S3-${S3ProdBucket}'
-              #OriginCustomHeaders: 
-              #  - OriginCustomHeader
-              #OriginPath: String
               S3OriginConfig: 
-                #OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref 'CloudfrontOAI']]
                 OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudfrontOAI}'
-          #PriceClass: String
-          #Restrictions: 
-          #  Restrictions
-          #ViewerCertificate: 
-          #  ViewerCertificate
-          #WebACLId: String
   #!ref CloudFrontDistro #return cloudfront ID
   #!GetAtt [CloudFrontDistro, DomainName] #return cloudfront url
+
 
 Outputs:
   CodeCommitURL:
@@ -755,6 +593,6 @@ Outputs:
   DomainNameNS:
     Value: !Join [', ', !GetAtt [Route53HostedZone, NameServers]]
   CFDistroURL:
-    Value: !GetAtt [CloudFrontDistro, DomainName]
+    Value: !Sub 'http://${CloudFrontDistro.DomainName}'
   LambdaARN:
     Value: !Ref LambdaEdgeStackARN
