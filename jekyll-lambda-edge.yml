@@ -1,9 +1,9 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Parameters:
-  LambdaEdgeFunctionName:
-    Type: String
-    Default: cloudfront-simple-urls
+#Parameters:
+  #LambdaEdgeFunctionName:
+  #  Type: String
+  #  Default: cloudfront-simple-urls
 
 Resources:
   LambdaEdgePolicy:
@@ -46,7 +46,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties: 
       Description: A custom Lambda@Edge function for simple URLs from CloudFront Distribution
-      FunctionName: !Ref LambdaEdgeFunctionName
+      FunctionName: !Sub '${AWS::StackName}-lambda'
       Handler: index.handler
       Role: !GetAtt [LambdaEdgeRole , Arn]
       Runtime: nodejs10.x
