@@ -1,0 +1,29 @@
+version: 0.2 
+ 
+env: 
+  variables: 
+    S3_URL: "jekyll-website-staging" 
+ 
+phases: 
+  install: 
+    runtime-versions: 
+      ruby: 2.6 
+    commands: 
+      - | #Skip install phase if clearing the CDN cache 
+        if [[ -z $CDN_DISTRIBUTION_ID ]]; then 
+          echo "do insall phase" 
+          #gem install jekyll bundler 
+          #bundle install --path vendor/bundle 
+        fi 
+  build: 
+    commands: 
+      - | #Skip build phase if clearing the CDN cache 
+        if [[ ! -z $CDN_DISTRIBUTION_ID ]]; then 
+          echo "******** Clearing CDN Cache for $CDN_DISTRIBUTION_ID ********" 
+          aws cloudfront create-invalidation --distribution-id $CDN_DISTRIBUTION_ID --paths /* 
+        else 
+          echo "******** Building Jekyll site ********" 
+          #bundle exec jekyll build 
+          echo "******** Uploading to S3 ********" 
+          #aws s3 sync _site/ s3://$S3_URL --exclude "buildspec.yml" --exclude "docker-compose.yml" 
+        fi 
