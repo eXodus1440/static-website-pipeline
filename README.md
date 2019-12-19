@@ -18,13 +18,14 @@ aws cloudformation describe-stacks --stack-name cloudfront-simple-urls --region 
 ```
 
 Deploy the Jekyll Pipeline, replacing the parameter overrides values with your own
+Update <LambdaEdgeFunctionARN> with details from the above command
 ```
 aws cloudformation deploy \
   --template-file jekyll-build-pipeline.yml \
   --capabilities CAPABILITY_NAMED_IAM \
   --stack-name my-jekyll-website \
   --parameter-overrides \
-    LambdaEdgeStackARN=arn:aws:lambda:us-east-1:XXXXXXXXXXXX:function:cloudfront-simple-urls-lambda:1 \
+    LambdaEdgeStackARN=<LambdaEdgeFunctionARN> \
     DomainName=jekyll-demo.com \
     WebsiteURL=www.jekyll-demo.com \
   --region eu-west-1
@@ -93,9 +94,9 @@ Start with removing the user account
 [https://vrnchndk.in/2017/01/17/delete-iam-user-completely-using-aws-cli/]
 ```
 aws iam list-access-keys --user-name Steve --output text --query 'AccessKeyMetadata[*].AccessKeyId'
-aws iam delete-access-key --user-name Steve --access-key-id AKIA37OMKSZCVPGXXXXX
+aws iam delete-access-key --user-name Steve --access-key-id <AccessKeyId>
 aws iam list-service-specific-credentials --user-name Steve --output text --query 'ServiceSpecificCredentials[*].ServiceSpecificCredentialId'
-aws iam delete-service-specific-credential --user-name Steve --service-specific-credential-id AKIA37OMKSZCVPGXXXXX
+aws iam delete-service-specific-credential --user-name Steve --service-specific-credential-id <ServiceSpecificCredentialId>
 aws iam list-groups-for-user --user-name Steve --output text --query 'Groups[*].GroupName'
 aws iam remove-user-from-group --group-name my-jekyll-website-codecommit-repo-rw --user-name Steve
 aws iam delete-user --user-name Steve
