@@ -584,15 +584,23 @@ Resources:
 
 
 Outputs:
+  CodeCommitGroup:
+    Value: !Ref CodeCommitIAMGroup
   CodeCommitURL:
     Value: !GetAtt [CodeCommitRepo, CloneUrlHttp]
   StagingURL:
     Value: !GetAtt [S3StagingBucket, WebsiteURL]
-  HostedZoneID:
-    Value: !Ref Route53HostedZone
+  S3Prod:
+    Value: !Ref S3ProdBucket
+  S3Staging:
+    Value: !Ref S3StagingBucket
+  S3BuildArtifact:
+    Value: !Ref CodePipelineS3ArtifactLocation
+  #HostedZoneID:
+  #  Value: !Ref Route53HostedZone
   DomainNameNS:
     Value: !Join [', ', !GetAtt [Route53HostedZone, NameServers]]
   CFDistroURL:
     Value: !Sub 'http://${CloudFrontDistro.DomainName}'
-  LambdaARN:
-    Value: !Ref LambdaEdgeStackARN
+  #LambdaARN:
+  #  Value: !Ref LambdaEdgeStackARN
