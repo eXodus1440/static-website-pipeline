@@ -1,0 +1,13 @@
+version: '2' 
+ 
+services: 
+  jekyll: 
+    image: jekyll/builder 
+    #image: jekyll/jekyll 
+    #command: jekyll new test_site 
+    command: jekyll serve --watch --force_polling --verbose 
+    volumes: 
+      - .:/srv/jekyll 
+    ports: 
+      - '4000:4000' 
+ 
